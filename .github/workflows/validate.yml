@@ -1,0 +1,41 @@
+name: Validate installer
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check Bash syntax
+        run: bash -n install.sh
+      - name: Extract embedded Python app
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/buddy-test"
+          awk '
+            /^cat > \/opt\/buddy\/app\.py <<.PYEOF.$/ { in_app=1; next }
+            in_app && /^PYEOF$/ { exit }
+            in_app { print }
+          ' install.sh > "$RUNNER_TEMP/buddy-test/app.py"
+          test -s "$RUNNER_TEMP/buddy-test/app.py"
+      - name: Install Python test dependencies
+        run: python -m pip install Flask waitress
+      - name: Check Python syntax
+        run: python -m py_compile "$RUNNER_TEMP/buddy-test/app.py" tests/test_app.py
+      - name: Run Flask, Wi-Fi, and route-policy scenarios
+        env:
+          PYTHONPATH: ${{ runner.temp }}/buddy-test
+          BUDDY_TEST_APP_DIR: ${{ runner.temp }}/buddy-test
+        run: python -m unittest discover -s tests -v
+      - name: Run Wi-Fi DOM behavior scenarios
+        run: node tests/test_wifi_table.mjs "$GITHUB_WORKSPACE/install.sh"
+
